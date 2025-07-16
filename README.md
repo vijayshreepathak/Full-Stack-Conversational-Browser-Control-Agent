@@ -30,36 +30,201 @@
 ## 🧩 System Architecture
 
 ```mermaid
-flowchart TD
-    A[User] --> B[React Chat UI]
-    B --> C[WebSocket Server]
-    
-    C --> D[Conversation Manager]
-    C --> E[OpenAI Service]
-    C --> F[Browser Controller]
-    
-    F --> G[Real Chrome Browser]
-    F --> H[Screenshot Handler]
-    
-    H --> C
-    C --> B
-    
-    subgraph Frontend
-        B
+graph TB
+    %% User Layer
+    subgraph "👤 User Interface Layer"
+        USER[👤 User]
+        CHAT[💬 Chat Input]
+        DISPLAY[📺 Message Display]
+        SCREENSHOTS[🖼️ Screenshot Gallery]
     end
-    
-    subgraph Backend
-        C
-        D
-        E
-        F
-        H
+
+    %% Frontend Layer
+    subgraph "🖥️ Frontend (React + Vite)"
+        direction TB
+        CHATUI[💬 ChatInterface.jsx]
+        MSGBUBBLE[💭 MessageBubble.jsx]
+        SCREENDISPLAY[📸 ScreenshotDisplay.jsx]
+        WSCONNECT[🔌 WebSocket Client]
+        STATE[📊 State Management]
+        
+        CHATUI --> MSGBUBBLE
+        CHATUI --> SCREENDISPLAY
+        CHATUI --> WSCONNECT
+        WSCONNECT --> STATE
     end
-    
-    subgraph External
-        G
+
+    %% Communication Layer
+    subgraph "🌐 Real-Time Communication"
+        WEBSOCKET[🔗 WebSocket ServerPort: 8765]
+        MSGQUEUE[📮 Message Queue]
+        BROADCAST[📡 Broadcast Handler]
+        
+        WEBSOCKET --> MSGQUEUE
+        MSGQUEUE --> BROADCAST
     end
+
+    %% Backend Core Layer
+    subgraph "🧠 Backend Core Services"
+        direction TB
+        CONVMGR[🗣️ Conversation Manager]
+        INTENTPARSER[🎯 Intent Parser]
+        VALIDATION[✅ Input Validator]
+        ERRORHANDLER[⚠️ Error Handler]
+        
+        CONVMGR --> INTENTPARSER
+        CONVMGR --> VALIDATION
+        CONVMGR --> ERRORHANDLER
+    end
+
+    %% AI Integration Layer
+    subgraph "🤖 AI Services"
+        OPENAI[🧠 OpenAI GPT-4]
+        CONTENTGEN[✍️ Content Generator]
+        NLPROCESSOR[📝 NL Processor]
+        
+        CONTENTGEN --> OPENAI
+        NLPROCESSOR --> OPENAI
+    end
+
+    %% Browser Automation Layer
+    subgraph "🕹️ Browser Control Engine"
+        direction TB
+        PLAYWRIGHT[🎭 Playwright Driver]
+        BROWSERCTRL[🌐 Browser Controller]
+        ELEMENTFINDER[🔍 Element Finder]
+        ACTIONEXEC[⚡ Action Executor]
+        
+        BROWSERCTRL --> PLAYWRIGHT
+        BROWSERCTRL --> ELEMENTFINDER
+        BROWSERCTRL --> ACTIONEXEC
+    end
+
+    %% Screenshot & Media Layer
+    subgraph "📸 Media Processing"
+        SCREENCAP[📷 Screenshot Capture]
+        IMGPROCESS[🖼️ Image Processor]
+        BASE64CONV[🔄 Base64 Converter]
+        FILESANITIZER[🧹 Filename Sanitizer]
+        
+        SCREENCAP --> IMGPROCESS
+        IMGPROCESS --> BASE64CONV
+        IMGPROCESS --> FILESANITIZER
+    end
+
+    %% External Services
+    subgraph "🌍 External Services"
+        CHROME[🌐 Chrome BrowserReal UI Automation]
+        GMAIL[📧 Gmail Web Interfacemail.google.com]
+        OPENAIAPI[🤖 OpenAI APIGPT-4 Endpoint]
+        
+        CHROME --> GMAIL
+    end
+
+    %% Data Flow Connections
+    USER --> CHAT
+    CHAT --> CHATUI
+    CHATUI --> WSCONNECT
+    WSCONNECT -.->|WebSocket| WEBSOCKET
+    
+    WEBSOCKET --> CONVMGR
+    CONVMGR --> NLPROCESSOR
+    NLPROCESSOR --> CONTENTGEN
+    CONTENTGEN -.->|API Call| OPENAIAPI
+    
+    CONVMGR --> BROWSERCTRL
+    BROWSERCTRL --> PLAYWRIGHT
+    PLAYWRIGHT -.->|Automation| CHROME
+    
+    BROWSERCTRL --> SCREENCAP
+    SCREENCAP --> BASE64CONV
+    BASE64CONV --> WEBSOCKET
+    
+    WEBSOCKET --> BROADCAST
+    BROADCAST -.->|WebSocket| WSCONNECT
+    WSCONNECT --> SCREENDISPLAY
+    SCREENDISPLAY --> SCREENSHOTS
+    
+    WEBSOCKET --> DISPLAY
+    DISPLAY --> USER
+
+    %% Styling
+    classDef frontend fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef backend fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef external fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef communication fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef ai fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef browser fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    classDef media fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+
+    class CHATUI,MSGBUBBLE,SCREENDISPLAY,WSCONNECT,STATE frontend
+    class CONVMGR,INTENTPARSER,VALIDATION,ERRORHANDLER backend
+    class CHROME,GMAIL,OPENAIAPI external
+    class WEBSOCKET,MSGQUEUE,BROADCAST communication
+    class OPENAI,CONTENTGEN,NLPROCESSOR ai
+    class PLAYWRIGHT,BROWSERCTRL,ELEMENTFINDER,ACTIONEXEC browser
+    class SCREENCAP,IMGPROCESS,BASE64CONV,FILESANITIZER media
 ```
+
+### 🔄 Data Flow Patterns
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 User
+    participant F as 🖥️ Frontend
+    participant W as 🔗 WebSocket
+    participant C as 🧠 Conv Manager
+    participant A as 🤖 AI Service
+    participant B as 🕹️ Browser Controller
+    participant S as 📸 Screenshot Handler
+    participant G as 🌐 Gmail
+
+    U->>F: Types: "Send email to manager"
+    F->>W: Send message via WebSocket
+    W->>C: Process user command
+    C->>C: Parse intent & extract info
+    C->>A: Generate email content
+    A-->>C: Return subject & body
+    C->>B: Execute browser automation
+    B->>G: Navigate to Gmail
+    B->>S: Capture screenshot
+    S-->>W: Send base64 image
+    W-->>F: Stream screenshot
+    F->>U: Display screenshot in chat
+    B->>G: Login to Gmail
+    B->>S: Capture screenshot
+    S-->>W: Send base64 image
+    W-->>F: Stream screenshot
+    F->>U: Display screenshot in chat
+    B->>G: Compose & send email
+    B->>S: Capture final screenshot
+    S-->>W: Send confirmation image
+    W-->>F: Stream success screenshot
+    F->>U: Show completion
+```
+
+### 🏗️ Architecture Highlights
+
+**Here's the architecture: the React frontend sends chat commands to a Python backend via WebSocket. The backend uses Playwright to control a real Chrome browser, and OpenAI to generate email content. Screenshots of every browser step are sent back and shown in the chat.**
+
+| Layer | Components | Purpose |
+|-------|------------|---------|
+| **🖥️ Frontend** | React UI, WebSocket Client, State Management | User interaction, real-time updates, screenshot display |
+| **🌐 Communication** | WebSocket Server, Message Queue, Broadcast Handler | Real-time bidirectional communication |
+| **🧠 Backend Core** | Conversation Manager, Intent Parser, Validators | Command processing, conversation flow |
+| **🤖 AI Services** | OpenAI Integration, Content Generation, NL Processing | Email content creation, intent understanding |
+| **🕹️ Browser Engine** | Playwright Driver, Element Finder, Action Executor | Real browser automation, UI interaction |
+| **📸 Media Processing** | Screenshot Capture, Image Processing, Base64 Conversion | Visual feedback, image optimization |
+| **🌍 External** | Chrome Browser, Gmail Interface, OpenAI API | Actual execution environment |
+
+### 🚀 Key Architecture Benefits
+
+- **🔄 Real-time Feedback**: WebSocket ensures instant screenshot streaming
+- **🔧 Modular Design**: Each component has a single responsibility
+- **🛡️ Error Resilience**: Multiple fallback mechanisms at every layer
+- **📸 Visual Transparency**: Every browser action is captured and displayed
+- **🧩 Extensible**: Easy to add new email providers or AI models
+- **⚡ Performance**: Async operations throughout the stack
 
 > **Every arrow from the Browser Controller onward represents real clicks, typing, and waits inside a live browser session—providing complete transparency and human-level capability.**
 
@@ -273,10 +438,10 @@ Built with ❤️ by **Vijayshree Pathak**
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📞 Contact & Support
-
-For questions, issues, or contributions:
+## 📞 Contact:
 - GitHub Issues: [Create an issue](https://github.com/vijayshreepathak/Full-Stack-Conversational-Browser-Control-Agent/issues)
-- Email: vijayshreepathak@example.com
+- Email: vijayshree9646@gmail.com
 
 > *"Real agents don't call APIs, they move pixels."*
+
+**⭐ Star this repo if you found it helpful!**
