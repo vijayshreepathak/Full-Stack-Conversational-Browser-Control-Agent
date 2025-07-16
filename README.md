@@ -280,5 +280,3 @@ For questions, issues, or contributions:
 - Email: vijayshreepathak@example.com
 
 > *"Real agents don't call APIs, they move pixels."*
-
-**⭐ Star this repo if you found it helpful!**
