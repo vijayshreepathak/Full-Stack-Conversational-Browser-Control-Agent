@@ -21,8 +21,10 @@
 - 🕹️ **Playwright-powered browser control**:
   - Opens Chrome, navigates to Gmail
   - Logs in, handles "Sign-in faster / Passkey" dialogs
+  - **Handles 2FA (Google Prompt): waits for user mobile approval and continues automatically**
   - Writes & sends the email, taking a screenshot after every major step
-- 🖼️ **Inline visual feedback**: screenshots appear directly in the chat stream
+  - **Step-by-step screenshot reporting: every browser action (field filled, button clicked, 2FA wait, etc.) is shown in the chat with a screenshot**
+- 🖼️ **Inline visual feedback**: screenshots appear directly in the chat stream for every step
 - 📝 **AI-generated subject & body**: OpenAI crafts professional-sounding messages
 - 🔒 **100% Gmail-UI driven**—no hidden programmatic email endpoints
 - 🛡️ **Robust error handling**: fallback selectors, filename sanitization, and clear user feedback
@@ -142,13 +144,14 @@ The **Conversation Manager** extracts intent & missing information:
 1. 🚀 Launch Chrome with Playwright
 2. 🌐 Navigate to `https://mail.google.com`
 3. 🔐 Handle login (including optional passkey prompts)
-4. ✍️ Open **Compose** window
-5. 📧 Fill **To** → **Subject** → **Body** fields
-6. 📤 Click **Send** (with Ctrl+Enter fallback)
-7. 📸 Capture screenshot after each action
+4. **🛡️ Handle 2FA (Google Prompt): waits for user to tap 'Yes' on their phone, then continues**
+5. ✍️ Open **Compose** window
+6. 📧 Fill **To** → **Subject** → **Body** fields
+7. 📤 Click **Send** (with Ctrl+Enter fallback)
+8. 📸 **Capture screenshot after every action (not just major steps)**
 
 ### Step 5: Visual Feedback
-Screenshots & status updates stream back to the chat UI in real-time.
+**Every browser action and status update streams back to the chat UI in real-time, with a screenshot for each step.**
 
 > **No APIs, no SMTP, no hidden form-posts—just visible browser automation.**
 
@@ -159,14 +162,17 @@ Screenshots & status updates stream back to the chat UI in real-time.
 | **Gmail Homepage**          | Initial Gmail login page     |
 | **Email Entered**           | User email filled in         |
 | **Password Entered**        | Password authentication       |
+| **2FA Prompt**              | Google Prompt/2FA detected, waiting for mobile approval |
+| **2FA Approved**            | User approved on phone, inbox loads |
 | **Inbox Loaded**            | Gmail inbox successfully loaded |
 | **Compose Window**          | Email composition dialog     |
 | **Recipient Filled**        | To field completed           |
 | **Subject Filled**          | Subject line added           |
 | **Body Filled**             | Email body content added     |
 | **Email Sent**              | Confirmation of successful send |
+| **Every intermediate step** | Each field fill, click, and wait is shown with a screenshot |
 
-**Note**: All screenshots are captured automatically and displayed inline in the chat interface.
+**Note**: All screenshots are captured automatically and displayed inline in the chat interface, for every step.
 
 ## 🛡️ Troubleshooting
 
@@ -174,7 +180,7 @@ Screenshots & status updates stream back to the chat UI in real-time.
 
 | Issue                        | Solution                                                                 |
 |------------------------------|--------------------------------------------------------------------------|
-| **Gmail asks for 2FA/phone** | Use a test account without 2FA, or complete the prompt manually once     |
+| **Gmail asks for 2FA/phone** | **Now supported!** The agent will wait for you to approve the login on your phone (Google Prompt), then continue automatically. |
 | **Email stuck in Drafts**    | Check selector updates in `browser_controller.py` - Gmail may have changed UI |
 | **Screenshots not showing**  | Confirm WebSocket connection (`ws://localhost:8765`) isn't blocked by firewall |
 | **OpenAI errors**            | Verify `OPENAI_API_KEY` in `.env`, check usage quota and model availability |
