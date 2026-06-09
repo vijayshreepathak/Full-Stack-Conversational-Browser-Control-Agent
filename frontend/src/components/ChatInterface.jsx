@@ -5,6 +5,14 @@ import './ChatInterface.css';
 
 const WS_URL = 'ws://localhost:9000';
 
+const PASSWORD_TRIGGERS = ['password', 'pass'];
+
+const isPasswordPrompt = (messages) => {
+  const last = [...messages].reverse().find(m => m.sender === 'agent');
+  if (!last) return false;
+  return PASSWORD_TRIGGERS.some(kw => last.text.toLowerCase().includes(kw));
+};
+
 const ChatInterface = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -12,7 +20,6 @@ const ChatInterface = () => {
 
   useEffect(() => {
     connectWebSocket(WS_URL);
-    // Subscribe to agent messages
     const unsubscribe = subscribeToMessages((msg) => {
       setMessages((prev) => [...prev, msg]);
     });
@@ -20,7 +27,6 @@ const ChatInterface = () => {
   }, []);
 
   useEffect(() => {
-    // Scroll to bottom on new message
     if (chatWindowRef.current) {
       chatWindowRef.current.scrollTop = chatWindowRef.current.scrollHeight;
     }
@@ -29,11 +35,13 @@ const ChatInterface = () => {
   const handleSend = (e) => {
     e.preventDefault();
     if (input.trim()) {
-      setMessages((prev) => [...prev, { sender: 'user', text: input }]);
+      setMessages((prev) => [...prev, { sender: 'user', text: isPasswordPrompt(messages) ? '••••••••' : input }]);
       sendMessage({ text: input });
       setInput('');
     }
   };
+
+  const inputType = isPasswordPrompt(messages) ? 'password' : 'text';
 
   return (
     <div className="chat-interface">
@@ -44,10 +52,11 @@ const ChatInterface = () => {
       </div>
       <form className="chat-input" onSubmit={handleSend}>
         <input
-          type="text"
+          type={inputType}
           value={input}
           onChange={e => setInput(e.target.value)}
           placeholder="Type your message..."
+          autoComplete={inputType === 'password' ? 'current-password' : 'off'}
         />
         <button type="submit">Send</button>
       </form>
@@ -56,3 +65,9 @@ const ChatInterface = () => {
 };
 
 export default ChatInterface; 
+
+// What happens here?
+// Connect to backend
+// Listen for incoming messages
+// Update UI when message arrives
+// Cleanup on unmount

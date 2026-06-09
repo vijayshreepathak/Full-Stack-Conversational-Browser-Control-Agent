@@ -13,8 +13,8 @@ def encode_screenshot(filename):
     with open(filename, "rb") as img_file:
         return "data:image/png;base64," + base64.b64encode(img_file.read()).decode('utf-8')
 
-async def handle_client(websocket, path):
-    # Define these at the top!
+async def handle_client(websocket):
+    # we have to Define these at the top!
     required_fields = ["email", "password", "recipient", "purpose", "leave_dates", "manager_email"]
     prompts = {
         "email": "What's your Gmail email?",
@@ -28,8 +28,16 @@ async def handle_client(websocket, path):
     conversation = ConversationManager()
     ai = AIIntegration()
     controller = BrowserController()
-    await controller.launch_browser()
-    await controller.navigate_to_gmail()
+    try:
+        await controller.launch_browser()
+        await controller.navigate_to_gmail()
+    except Exception as e:
+        await websocket.send(json.dumps({
+            "sender": "agent",
+            "text": f"Failed to launch browser: {e}",
+            "screenshot": None
+        }))
+        return
     await websocket.send(json.dumps({
         "sender": "agent",
         "text": "Opening Gmail...",

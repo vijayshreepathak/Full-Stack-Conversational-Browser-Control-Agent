@@ -1,4 +1,4 @@
 playwright
-asyncio
-openai
-python-dotenv 
+openai>=1.0.0
+websockets>=10.0
+python-dotenv

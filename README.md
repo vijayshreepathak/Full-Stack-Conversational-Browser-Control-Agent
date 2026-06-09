@@ -1,289 +1,515 @@
-# 🤖 Conversational Browser Control Agent
+# Conversational Browser Control Agent
 
-> An end-to-end AI agent that **controls a real Chrome browser** through natural-language conversation and visibly sends emails from the Gmail web UI.  
-> **Absolutely no Gmail API, SMTP, or indirect form requests** are used—every action is pure Playwright-driven automation that a human could replicate by hand.
+> An end-to-end AI agent that **controls a real Chrome browser** through natural-language conversation and visibly sends emails from the Gmail web UI.
+> No Gmail API, no SMTP, no hidden form-posts — every action is pure Playwright-driven automation that a human could replicate by hand.
 
-## 📑 Table of Contents
-1. [✨ Key Features](#-key-features)  
-2. [🧩 System Architecture](#-system-architecture)  
-3. [🛠️ Technology Stack](#️-technology-stack)  
-4. [⚡ Setup Guide](#-setup-guide)  
-5. [🚀 Running the Project](#-running-the-project)  
-6. [🔎 How It Works – End-to-End Flow](#-how-it-works--end-to-end-flow)  
-7. [🖼️ Screenshots / Demo](#-screenshots--demo)  
-8. [🛡️ Troubleshooting](#-troubleshooting)  
-9. [🧠 Notable Challenges & Solutions](#-notable-challenges--solutions)  
-10. [📜 License & Credits](#-license--credits)
+---
 
-## ✨ Key Features
-- 🗣️ **Natural-language commands** (e.g., "Email my manager about Monday's leave")
-- 🤖 **Dynamic info gathering**: prompts for any missing details
-- 🕹️ **Playwright-powered browser control**:
-  - Opens Chrome, navigates to Gmail
-  - Logs in, handles "Sign-in faster / Passkey" dialogs
-  - **Handles 2FA (Google Prompt): waits for user mobile approval and continues automatically**
-  - Writes & sends the email, taking a screenshot after every major step
-  - **Step-by-step screenshot reporting: every browser action (field filled, button clicked, 2FA wait, etc.) is shown in the chat with a screenshot**
-- 🖼️ **Inline visual feedback**: screenshots appear directly in the chat stream for every step
-- 📝 **AI-generated subject & body**: OpenAI crafts professional-sounding messages
-- 🔒 **100% Gmail-UI driven**—no hidden programmatic email endpoints
-- 🛡️ **Robust error handling**: fallback selectors, filename sanitization, and clear user feedback
+## Table of Contents
 
-## 🧩 System Architecture
+1. [Key Features](#key-features)
+2. [System Architecture](#system-architecture)
+3. [Detailed Component Architecture](#detailed-component-architecture)
+4. [Data Flow — End to End](#data-flow--end-to-end)
+5. [Component Breakdown](#component-breakdown)
+6. [Project Structure](#project-structure)
+7. [Tech Stack](#tech-stack)
+8. [Setup & Installation](#setup--installation)
+9. [Running the Project](#running-the-project)
+10. [Environment Variables](#environment-variables)
+11. [Key Design Decisions](#key-design-decisions)
+12. [Bug Fixes Applied](#bug-fixes-applied)
+13. [Troubleshooting](#troubleshooting)
+14. [Future Enhancements](#future-enhancements)
+15. [Credits](#credits)
 
-```mermaid
-flowchart TD
-    A[User] --> B[React Chat UI]
-    B --> C[WebSocket Server]
-    
-    C --> D[Conversation Manager]
-    C --> E[OpenAI Service]
-    C --> F[Browser Controller]
-    
-    F --> G[Real Chrome Browser]
-    F --> H[Screenshot Handler]
-    
-    H --> C
-    C --> B
-    
-    subgraph Frontend
-        B
-    end
-    
-    subgraph Backend
-        C
-        D
-        E
-        F
-        H
-    end
-    
-    subgraph External
-        G
-    end
+---
+
+## Key Features
+
+- **Natural-language conversation** — the agent asks for any missing details instead of demanding them upfront
+- **Step-by-step visual feedback** — every browser action (field filled, button clicked, 2FA wait) streams a screenshot back into the chat in real time
+- **2FA / Google Prompt support** — detects the phone-approval screen and polls every 3 seconds for up to 120 seconds, continuing automatically once approved
+- **AI-generated email content** — OpenAI GPT-3.5-turbo writes a professional subject and body from your context; falls back gracefully to hardcoded strings with no API key
+- **Password masking** — input switches to `type="password"` when the agent asks for credentials; only `••••••••` is stored in chat history
+- **Resilient selector strategy** — multiple CSS selector fallbacks handle Gmail UI changes without breaking the flow
+- **100% browser-UI driven** — no hidden API endpoints, no SMTP relay
+
+---
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        USER'S WEB BROWSER                               │
+│                        localhost:3000  (React)                          │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  App.js  →  ChatInterface.jsx                                     │  │
+│  │               │                                                   │  │
+│  │    ┌──────────▼──────────┐     ┌──────────────────────────────┐  │  │
+│  │    │   MessageBubble     │     │  websocket_client.js         │  │  │
+│  │    │   .jsx              │     │  ┌──────────────────────┐    │  │  │
+│  │    │  ┌───────────────┐  │     │  │ connectWebSocket()   │    │  │  │
+│  │    │  │ScreenshotDisp │  │     │  │ sendMessage()        │    │  │  │
+│  │    │  │lay.jsx        │  │     │  │ subscribeToMessages()│    │  │  │
+│  │    │  │<img base64…/> │  │     │  │ pendingMessages[]    │    │  │  │
+│  │    │  └───────────────┘  │     │  │ onclose/onerror →   │    │  │  │
+│  │    └─────────────────────┘     │  │   system chat msg   │    │  │  │
+│  │                                └──────────────────────────┘  │  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────┬──────────────────────────────────┘
+                                       │
+                         WebSocket     │   ws://localhost:9000
+                         JSON frames   │   { sender, text, screenshot }
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────┐
+│                          PYTHON BACKEND                                  │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                    websocket_server.py                             │  │
+│  │                   (asyncio + websockets 15.x)                     │  │
+│  │                                                                    │  │
+│  │   handle_client(websocket)                                         │  │
+│  │    │                                                               │  │
+│  │    ├─ PHASE 1: Browser startup                                     │  │
+│  │    │   launch_browser() → navigate_to_gmail()                      │  │
+│  │    │   → send screenshot of Gmail homepage                         │  │
+│  │    │                                                               │  │
+│  │    ├─ PHASE 2: Conversational field collection                     │  │
+│  │    │   required_fields = [email, password, recipient,              │  │
+│  │    │                      purpose, leave_dates, manager_email]     │  │
+│  │    │   while missing fields:                                       │  │
+│  │    │     send prompt → recv answer → store in context              │  │
+│  │    │                                                               │  │
+│  │    ├─ PHASE 3: AI content generation                               │  │
+│  │    │   generate_subject(context) → subject string                  │  │
+│  │    │   generate_body(context)    → body string                     │  │
+│  │    │                                                               │  │
+│  │    ├─ PHASE 4: Login with live streaming                           │  │
+│  │    │   login(email, pwd, step_callback)                            │  │
+│  │    │   step_callback(text, png) → WebSocket send                   │  │
+│  │    │                                                               │  │
+│  │    └─ PHASE 5: Compose + send with live streaming                  │  │
+│  │        compose_email(to, subj, body, step_callback)                │  │
+│  │        step_callback(text, png) → WebSocket send                   │  │
+│  └──────────────┬────────────────┬──────────────────────────────────┘   │
+│                 │                │                                        │
+│  ┌──────────────▼──┐  ┌──────────▼──────────────────────────────────┐   │
+│  │  AIIntegration  │  │          BrowserController                  │   │
+│  │                 │  │         (browser_controller.py)             │   │
+│  │  OpenAI         │  │                                             │   │
+│  │  GPT-3.5-turbo  │  │  launch_browser()                           │   │
+│  │                 │  │   └─ Playwright → real Chrome (headless=F)  │   │
+│  │  generate_      │  │   └─ Anti-bot: navigator.webdriver = undef  │   │
+│  │  subject(ctx)   │  │                                             │   │
+│  │                 │  │  login(email, pwd, step_callback)           │   │
+│  │  generate_      │  │   ├─ fill email → click Next                │   │
+│  │  body(ctx)      │  │   ├─ dismiss passkey/sign-in dialogs        │   │
+│  │                 │  │   ├─ fill password → click Next             │   │
+│  │  No API key?    │  │   ├─ detect 2FA prompt (7 selectors)        │   │
+│  │  → fallback     │  │   │   poll inbox every 3s (max 120s)        │   │
+│  │    strings      │  │   └─ confirm inbox loaded                   │   │
+│  └─────────────────┘  │                                             │   │
+│                        │  compose_email(to, subj, body, callback)   │   │
+│  ┌──────────────────┐  │   ├─ dismiss popups                        │   │
+│  │ Conversation     │  │   ├─ open compose window (5 selectors)     │   │
+│  │ Manager          │  │   ├─ fill To / Subject / Body              │   │
+│  │                  │  │   └─ click Send (fallback: Ctrl+Enter)     │   │
+│  │ context = {      │  │                                             │   │
+│  │   email,         │  │  try_click(selectors[], timeout)           │   │
+│  │   password,      │  │   └─ loops through selector list,          │   │
+│  │   recipient,     │  │      tolerates Gmail DOM changes           │   │
+│  │   purpose,       │  │                                             │   │
+│  │   leave_dates,   │  │  ScreenshotHandler                         │   │
+│  │   manager_email  │  │   capture(page, filename)                  │   │
+│  │ }                │  │   → page.screenshot() → PNG file           │   │
+│  └──────────────────┘  │   → base64 encode → embed in JSON frame    │   │
+│                        └────────────────────────┬────────────────────┘  │
+└────────────────────────────────────────────────-│───────────────────────┘
+                                                  │
+                                   Playwright CDP │ (Chrome DevTools Protocol)
+                                                  │
+┌─────────────────────────────────────────────────▼───────────────────────┐
+│                    Real Chrome Browser (headless=False)                  │
+│                                                                          │
+│    https://mail.google.com                                               │
+│    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│    │  Login page  │→ │  2FA prompt  │→ │    Inbox     │                 │
+│    │  email+pwd   │  │  (optional)  │  │  + Compose   │                 │
+│    └──────────────┘  └──────────────┘  └──────────────┘                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Every arrow from the Browser Controller onward represents real clicks, typing, and waits inside a live browser session—providing complete transparency and human-level capability.**
+---
 
-## 🛠️ Technology Stack
+## Detailed Component Architecture
 
-| Layer               | Tech            | Rationale |
-|---------------------|-----------------|-----------|
-| 💻 Frontend         | React (Vite)    | Lightweight SPA, fast dev-reload, native PWA support |
-| 🔄 Realtime Channel | WebSocket       | Pushes status & screenshots with sub-second latency |
-| 🐍 Backend Runtime  | Python 3.10     | Rapid prototyping, rich ecosystem for AI & automation |
-| 🕹️ Browser Control | Playwright      | Modern, fast, resilient selectors, Chrome support |
-| 🤖 AI Content       | OpenAI GPT-4    | Generates subject lines & polished email bodies |
-| 🔑 Secrets Mgmt     | python-dotenv   | Keeps API keys & credentials outside the codebase |
+```
+websocket_server.py
+│
+│  CONVERSATION STATE MACHINE
+│  ┌─────────────────────────────────────────────────────────────┐
+│  │  State: last_prompted_field                                 │
+│  │                                                             │
+│  │  INIT ──► prompt "email?"                                   │
+│  │    │                                                        │
+│  │  recv(email) → context['email'] = val                       │
+│  │    │                                                        │
+│  │  missing = next(f for f in fields                           │
+│  │               if not context.get(f))                        │
+│  │    │                                                        │
+│  │  ┌─── missing found ──► prompt next field ──► recv ──┐     │
+│  │  │                                                    │     │
+│  │  └────────────────────────────────────────────────────┘     │
+│  │                                                             │
+│  │  all fields filled ──► AI ──► login ──► compose ──► break  │
+│  └─────────────────────────────────────────────────────────────┘
+│
+│  step_callback PATTERN
+│  ┌─────────────────────────────────────────────────────────────┐
+│  │  async def step_callback(text, screenshot_filename):        │
+│  │      await websocket.send(json.dumps({                      │
+│  │          "sender": "agent",                                 │
+│  │          "text": text,                                      │
+│  │          "screenshot": encode_screenshot(filename)          │
+│  │      }))                                                    │
+│  │                                                             │
+│  │  Passed into login() and compose_email()                    │
+│  │  Called after EVERY micro-action in the browser             │
+│  └─────────────────────────────────────────────────────────────┘
 
-## ⚡ Setup Guide
+browser_controller.py
+│
+│  try_click(selectors[], timeout)
+│  ┌──────────────────────────────────────────────────┐
+│  │  for sel in selectors:                           │
+│  │      try:                                        │
+│  │          wait_for_selector(sel, timeout)         │
+│  │          click(sel)                              │
+│  │          return True                             │
+│  │      except PlaywrightTimeout:                   │
+│  │          continue   # try next selector          │
+│  │  return False                                    │
+│  └──────────────────────────────────────────────────┘
+│
+│  2FA POLLING LOOP
+│  ┌──────────────────────────────────────────────────┐
+│  │  detect 2FA prompt (7 selectors)                 │
+│  │       │                                          │
+│  │       ▼  detected                                │
+│  │  while waited < 120s:                            │
+│  │      try wait_for inbox selector (2s)            │
+│  │          → success: step_callback + break        │
+│  │      check if 2FA prompt still visible           │
+│  │          → step_callback("Still waiting…")       │
+│  │      sleep(3s)                                   │
+│  │      waited += 3                                 │
+│  │  else: return timeout message                    │
+│  └──────────────────────────────────────────────────┘
 
-### 1️⃣ Clone the Repo
-```bash
-git clone https://github.com/vijayshreepathak/Full-Stack-Conversational-Browser-Control-Agent.git
-cd Full-Stack-Conversational-Browser-Control-Agent
+websocket_client.js
+│
+│  SINGLETON + SUBSCRIBER PATTERN
+│  ┌──────────────────────────────────────────────────┐
+│  │  module-level: socket, subscribers[], pending[]  │
+│  │                                                  │
+│  │  connectWebSocket(url)                           │
+│  │   ├─ guard: skip if already OPEN/CONNECTING      │
+│  │   ├─ onopen  → flush pendingMessages[]           │
+│  │   ├─ onmessage → parse JSON → notify all subs    │
+│  │   ├─ onclose → inject system message to chat     │
+│  │   └─ onerror → inject system message to chat     │
+│  │                                                  │
+│  │  sendMessage(payload)                            │
+│  │   ├─ OPEN       → send immediately               │
+│  │   └─ CONNECTING → push to pendingMessages[]      │
+│  │                                                  │
+│  │  subscribeToMessages(fn) → returns unsubscribe() │
+│  └──────────────────────────────────────────────────┘
 ```
 
-### 2️⃣ Backend Setup
+---
+
+## Data Flow — End to End
+
+```
+ User opens http://localhost:3000
+         │
+         ▼
+ ChatInterface mounts
+ → connectWebSocket('ws://localhost:9000')
+         │
+         │ TCP handshake
+         ▼
+ handle_client(websocket) fires on backend
+ → try: launch_browser() + navigate_to_gmail()
+ → capture gmail_homepage.png
+ → SEND { text: "Opening Gmail...", screenshot: <base64> }
+ → SEND { text: "What's your Gmail email?" }
+         │
+         │
+  ┌──────▼──────────────────────────────────────────────┐
+  │   FIELD COLLECTION LOOP (6 iterations)              │
+  │                                                     │
+  │  RECV user answer                                   │
+  │  → context[last_prompted_field] = answer            │
+  │  → find next missing field                          │
+  │  → SEND prompt for next field                       │
+  │                                                     │
+  │  Fields: email → password → recipient               │
+  │          → purpose → leave_dates → manager_email    │
+  └──────────────────────────────────────────────────────┘
+         │
+         ▼  all 6 fields collected
+ AIIntegration.generate_subject(context) → OpenAI / fallback
+ AIIntegration.generate_body(context)    → OpenAI / fallback
+         │
+         ▼
+ BrowserController.login(email, password, step_callback)
+ ┌────────────────────────────────────────────────────────┐
+ │  fill email → SEND { "Email filled", email_filled.png }│
+ │  click Next → SEND { "Clicked Next", None }            │
+ │  fill pwd   → SEND { "Password filled", pwd.png }      │
+ │  click Next → SEND { "Clicked Next", None }            │
+ │                                                        │
+ │  2FA? ──yes──► SEND { "2FA detected", 2fa.png }        │
+ │               poll every 3s:                          │
+ │                 SEND { "Still waiting (Ns)", png }     │
+ │               inbox loads:                            │
+ │                 SEND { "2FA approved", inbox.png }     │
+ │                                                        │
+ │  SEND { "Inbox loaded", inbox_loaded.png }             │
+ └────────────────────────────────────────────────────────┘
+         │
+         ▼
+ BrowserController.compose_email(to, subject, body, step_callback)
+ ┌────────────────────────────────────────────────────────┐
+ │  dismiss popups → SEND { "Dismissed popups", None }    │
+ │  open compose  → SEND { "Compose opened", None }       │
+ │  fill To       → SEND { "Recipient filled", to.png }   │
+ │  fill Subject  → SEND { "Subject filled", subj.png }   │
+ │  fill Body     → SEND { "Body filled", body.png }      │
+ │  click Send    → SEND { "Clicked Send", None }         │
+ │  confirmation  → SEND { "Email sent!", confirm.png }   │
+ └────────────────────────────────────────────────────────┘
+         │
+         ▼
+ controller.close()   → Chrome window closes
+ WebSocket connection ends
+```
+
+---
+
+## Component Breakdown
+
+### Backend
+
+| File | Role | Key Methods |
+|------|------|-------------|
+| `websocket_server.py` | Orchestrator. Asyncio event loop, conversation state machine, drives AI + browser, streams every step over WebSocket | `handle_client()`, `encode_screenshot()`, `main()` |
+| `browser_controller.py` | All Playwright automation. Login with 2FA, compose, send. Accepts `step_callback` to report micro-steps | `launch_browser()`, `login()`, `compose_email()`, `try_click()`, `dismiss_popups()` |
+| `ai_integration.py` | OpenAI GPT-3.5-turbo wrapper. Generates subject + body. Graceful fallback when no API key | `generate_subject()`, `generate_body()` |
+| `conversation_manager.py` | Thin dict wrapper for the 6 context fields | `update_context()` |
+| `screenshot_handler.py` | Playwright screenshot → PNG file → base64 string | `capture()` |
+| `app.py` | Standalone test harness (no WebSocket) for local browser testing | `main()` |
+
+### Frontend
+
+| File | Role |
+|------|------|
+| `ChatInterface.jsx` | Root chat UI. Connects WebSocket on mount, renders messages, detects password prompts and masks input |
+| `MessageBubble.jsx` | Renders one chat bubble. Passes `screenshot` prop to `ScreenshotDisplay` |
+| `ScreenshotDisplay.jsx` | `<img src={base64}>` — renders the live screenshot inline in the bubble |
+| `websocket_client.js` | Singleton WebSocket manager with subscriber pattern, message queue, and error surfacing |
+
+---
+
+## Project Structure
+
+```
+Full-Stack-Conversational-Browser-Control-Agent/
+│
+├── backend/
+│   ├── websocket_server.py      # Main entry point — WS server + orchestrator
+│   ├── browser_controller.py    # Playwright automation (login, 2FA, compose, send)
+│   ├── ai_integration.py        # OpenAI GPT-3.5-turbo integration
+│   ├── conversation_manager.py  # Context dict (email, password, recipient…)
+│   ├── screenshot_handler.py    # PNG capture → base64
+│   └── app.py                   # Standalone test harness
+│
+├── frontend/
+│   ├── public/
+│   └── src/
+│       ├── App.js
+│       ├── index.js
+│       ├── components/
+│       │   ├── ChatInterface.jsx     + ChatInterface.css
+│       │   ├── MessageBubble.jsx     + MessageBubble.css
+│       │   └── ScreenshotDisplay.jsx + ScreenshotDisplay.css
+│       └── services/
+│           └── websocket_client.js
+│
+├── requirements.txt             # Python dependencies
+└── README.md
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Frontend framework | React 19 (Create React App) | SPA, component-based UI |
+| Frontend transport | Browser WebSocket API | Persistent connection for real-time screenshot streaming |
+| Backend language | Python 3.9+ | asyncio-native |
+| Backend WebSocket server | `websockets` 15.x | Asyncio-based server |
+| Browser automation | Playwright (Chromium/Chrome) | CDP protocol, headless=False |
+| AI text generation | OpenAI GPT-3.5-turbo (`openai` >= 1.0) | Subject + body generation; graceful fallback |
+| Environment config | `python-dotenv` | Keeps API keys out of source |
+
+---
+
+## Setup & Installation
+
+### Prerequisites
+
+- Python 3.9+
+- Node.js 18+
+- Google Chrome at `C:\Program Files\Google\Chrome\Application\chrome.exe`
+  *(adjust path in `browser_controller.py` line 17 if different)*
+- (Optional) OpenAI API key
+
+### Backend
+
 ```bash
 cd backend
 pip install -r ../requirements.txt
-playwright install  # downloads Chrome driver
+python -m playwright install chromium
 ```
 
-Create `backend/.env`:
-```dotenv
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+### Frontend
 
-### 3️⃣ Frontend Setup
 ```bash
-cd ../frontend
+cd frontend
 npm install
 ```
 
-## 🚀 Running the Project
+---
 
-### Start Backend WebSocket Server
+## Running the Project
+
+Open **two terminals**:
+
+**Terminal 1 — Backend WebSocket server**
 ```bash
 cd backend
 python websocket_server.py
 ```
 
-### Start React Frontend
+**Terminal 2 — React frontend**
 ```bash
 cd frontend
 npm start
 ```
 
-Open your browser and navigate to: **http://localhost:3000**
+Open **http://localhost:3000**. The chat connects automatically, Chrome launches, and the agent starts the conversation.
 
-| Service            | Port   | URL |
-|--------------------|--------|-----|
-| Backend WebSocket  | **8765** | `ws://localhost:8765` |
-| React Dev-Server   | **3000** | `http://localhost:3000` |
+| Service | Port | URL |
+|---------|------|-----|
+| Backend WebSocket | **9000** | `ws://localhost:9000` |
+| React dev server | **3000** | `http://localhost:3000` |
 
-## 🔎 How It Works – End-to-End Flow
+---
 
-### Step 1: User Input
-User types: `"Send a leave request to my manager for 14-16 Aug."`
+## Environment Variables
 
-### Step 2: Information Gathering
-The **Conversation Manager** extracts intent & missing information:
-- Gmail credentials (email/password)
-- Manager's email address
-- Leave dates and reason
+Create `backend/.env`:
 
-### Step 3: AI Content Generation
-**OpenAI GPT-4** crafts:
-- Professional subject line
-- Well-formatted email body
-
-### Step 4: Browser Automation
-**Browser Controller** performs these actions:
-1. 🚀 Launch Chrome with Playwright
-2. 🌐 Navigate to `https://mail.google.com`
-3. 🔐 Handle login (including optional passkey prompts)
-4. **🛡️ Handle 2FA (Google Prompt): waits for user to tap 'Yes' on their phone, then continues**
-5. ✍️ Open **Compose** window
-6. 📧 Fill **To** → **Subject** → **Body** fields
-7. 📤 Click **Send** (with Ctrl+Enter fallback)
-8. 📸 **Capture screenshot after every action (not just major steps)**
-
-### Step 5: Visual Feedback
-**Every browser action and status update streams back to the chat UI in real-time, with a screenshot for each step.**
-
-> **No APIs, no SMTP, no hidden form-posts—just visible browser automation.**
-
-## 🖼️ Screenshots / Demo
-
-| Step                        | Description                   |
-|-----------------------------|-------------------------------|
-| **Gmail Homepage**          | Initial Gmail login page     |
-| **Email Entered**           | User email filled in         |
-| **Password Entered**        | Password authentication       |
-| **2FA Prompt**              | Google Prompt/2FA detected, waiting for mobile approval |
-| **2FA Approved**            | User approved on phone, inbox loads |
-| **Inbox Loaded**            | Gmail inbox successfully loaded |
-| **Compose Window**          | Email composition dialog     |
-| **Recipient Filled**        | To field completed           |
-| **Subject Filled**          | Subject line added           |
-| **Body Filled**             | Email body content added     |
-| **Email Sent**              | Confirmation of successful send |
-| **Every intermediate step** | Each field fill, click, and wait is shown with a screenshot |
-
-**Note**: All screenshots are captured automatically and displayed inline in the chat interface, for every step.
-
-## 🛡️ Troubleshooting
-
-### Common Issues and Solutions
-
-| Issue                        | Solution                                                                 |
-|------------------------------|--------------------------------------------------------------------------|
-| **Gmail asks for 2FA/phone** | **Now supported!** The agent will wait for you to approve the login on your phone (Google Prompt), then continue automatically. |
-| **Email stuck in Drafts**    | Check selector updates in `browser_controller.py` - Gmail may have changed UI |
-| **Screenshots not showing**  | Confirm WebSocket connection (`ws://localhost:8765`) isn't blocked by firewall |
-| **OpenAI errors**            | Verify `OPENAI_API_KEY` in `.env`, check usage quota and model availability |
-| **Port already in use**      | Change ports in configuration or kill existing processes               |
-| **Chrome not found**         | Ensure Chrome is installed at the specified path in `browser_controller.py` |
-
-### Debug Steps
-1. Check backend console for error messages
-2. Verify `.env` file is in the correct location
-3. Ensure all dependencies are installed
-4. Check screenshot files in the project directory for visual debugging
-
-## 🧠 Notable Challenges & Solutions
-
-### Technical Challenges
-
-| Challenge                        | Solution Implemented                                                     |
-|-----------------------------------|--------------------------------------------------------------------------|
-| **Frequent Gmail DOM changes**    | Multiple fallback selectors + fail-fast screenshots for debugging        |
-| **Subject text in To field**      | After filling To field, script presses **Tab** to create recipient chip |
-| **Windows filename errors**       | Sanitization function strips illegal characters across operating systems |
-| **Network timeouts**             | Adaptive waits with generous timeouts and retry logic                   |
-| **User transparency**             | Inline images in chat - no "black-box" actions                         |
-| **Error handling**               | Comprehensive try-catch blocks with descriptive error messages           |
-
-### Design Decisions
-
-- **Why Playwright over Selenium?** Modern API, better performance, native async support
-- **Why WebSocket over HTTP polling?** Real-time updates, lower latency, better user experience
-- **Why React over vanilla JS?** Component reusability, state management, developer experience
-- **Why OpenAI over local models?** Reliability, quality, and faster development cycle
-
-## 📁 Project Structure
-
-```
-Full-Stack-Conversational-Browser-Control-Agent/
-├── backend/
-│   ├── websocket_server.py        # Main WebSocket server
-│   ├── browser_controller.py      # Playwright automation logic
-│   ├── conversation_manager.py    # Chat flow management
-│   ├── ai_integration.py          # OpenAI API integration
-│   ├── screenshot_handler.py      # Screenshot capture/processing
-│   └── .env                       # Environment variables
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── ChatInterface.jsx  # Main chat UI
-│   │   │   ├── MessageBubble.jsx  # Individual messages
-│   │   │   └── ScreenshotDisplay.jsx # Screenshot rendering
-│   │   ├── services/
-│   │   │   └── websocket_client.js # WebSocket communication
-│   │   └── App.jsx                # Main application
-│   ├── public/
-│   └── package.json
-├── requirements.txt               # Python dependencies
-├── README.md                     # This file
-└── screenshots/                  # Generated screenshots
+```dotenv
+OPENAI_API_KEY=sk-...your-key-here...
 ```
 
-## 🔐 Security Considerations
+If `OPENAI_API_KEY` is absent, `AIIntegration` falls back to hardcoded subject/body strings. The full browser automation flow still completes — no API key required to demo the project.
 
-- **Credentials**: Never commit real credentials to version control
-- **Test Accounts**: Use dedicated test Gmail accounts for development
-- **Environment Variables**: Store sensitive data in `.env` files
-- **Network Security**: Run on localhost for development, use HTTPS in production
-- **API Keys**: Regularly rotate OpenAI API keys
+---
 
-## 🚧 Future Enhancements
+## Key Design Decisions
 
-- [ ] Support for other email providers (Outlook, Yahoo)
-- [ ] Multi-language support
-- [ ] Email templates and scheduling
-- [ ] Advanced error recovery mechanisms
-- [ ] Integration with calendar applications
-- [ ] Voice command support
-- [ ] Mobile-responsive design improvements
+**WebSocket over HTTP polling**
+Screenshot streaming happens at sub-second intervals during browser actions. A persistent WebSocket connection pushes each frame immediately; polling would introduce visible lag and unnecessary complexity.
 
-## 📜 Credits
+**`step_callback` pattern**
+Every micro-action in `BrowserController` calls `step_callback(text, filename)` which the server wires to `websocket.send`. This decouples browser logic from transport logic cleanly — the controller doesn't know about WebSocket, it just calls a callback.
 
+**Multiple selector fallbacks in `try_click()`**
+Gmail updates its DOM selectors without notice. Looping through an ordered list of selectors and catching `PlaywrightTimeout` on each means the agent adapts to UI changes without code changes in most cases.
 
-Built with ❤️ by **Vijayshree Pathak**
+**2FA polling loop (120s, 3s intervals)**
+Google's phone-approval prompt can take anywhere from 5 to 60+ seconds. Polling every 3s rather than a fixed sleep means the agent proceeds the moment the user approves, with no wasted time.
 
-### Special Thanks
+**Graceful AI fallback**
+The project is fully demonstrable without spending API credits. Hardcoded subject and body strings let you test and show the browser automation independently of OpenAI availability.
 
-- **Microsoft Playwright Team** – for rock-solid automation tools
-- **OpenAI** – for world-class language models  
-- **Proxy Convergence AI** – inspirational UX reference
-- **React Team** – for the amazing frontend framework
+**Password masking in chat**
+The agent detects when its last message contained the word "password" and switches the HTML input to `type="password"`. The chat history stores `••••••••` instead of the real value — credentials are never persisted in React state as plain text.
 
-### Contributing
+**Anti-bot measures in Chrome launch**
+The browser launches with `--disable-blink-features=AutomationControlled` and overrides `navigator.webdriver` via an init script, reducing the chance Gmail flags the session as automated.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+---
 
-## 📞 Contact & Support
+## Bug Fixes Applied
 
-For questions, issues, or contributions:
-- GitHub Issues: [Create an issue](https://github.com/vijayshreepathak/Full-Stack-Conversational-Browser-Control-Agent/issues)
-- Email: vijayshreepathak@example.com
+| # | File | Bug | Impact | Fix |
+|---|------|-----|--------|-----|
+| 1 | `ai_integration.py` | `openai.ChatCompletion.create` removed in `openai >= 1.0` | Hard crash on every AI call | Migrated to `OpenAI()` client, `client.chat.completions.create`, `.message.content` |
+| 2 | `websocket_server.py` | `handle_client(websocket, path)` — `path` param dropped in `websockets >= 14` (installed: 15.0.1) | Hard crash on every connection | Removed unused `path` parameter |
+| 3 | `websocket_server.py` | Browser launch outside `try/except` — startup crash silently killed connection | User saw nothing, no feedback | Wrapped startup in try/except; error sent as chat message |
+| 4 | `websocket_client.js` | No `onclose` / `onerror` handlers | Connection failures completely invisible to user | Added handlers that inject system messages into the chat |
+| 5 | `websocket_client.js` | `sendMessage` silently dropped messages during `CONNECTING` state | First user message lost if sent too quickly | Added `pendingMessages[]` queue flushed on `onopen` |
+| 6 | `ChatInterface.jsx` | Password typed and shown as plain text in chat history | Security — credentials visible in UI | Auto-detects password prompt, switches `type="password"`, stores `••••••••` in history |
+| 7 | `requirements.txt` | `asyncio` listed (Python stdlib, not a pip package); `websockets` entirely missing | Fresh `pip install` fails silently for websockets | Removed `asyncio`, added `websockets>=10.0`, pinned `openai>=1.0.0` |
 
-> *"Real agents don't call APIs, they move pixels."*
+---
 
-**⭐ Star this repo if you found it helpful!**
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `AttributeError: module 'openai' has no attribute 'ChatCompletion'` | Fixed — was caused by openai v1.0 API change |
+| `TypeError: handle_client() missing 1 required positional argument` | Fixed — was caused by websockets v14+ dropping the `path` param |
+| Gmail asks for 2FA / phone approval | Supported — agent waits up to 120s, polling every 3s |
+| Screenshots not appearing in chat | Confirm backend is running on port 9000 and no firewall blocks it |
+| `OpenAI` quota / key errors | Check `backend/.env` exists; project works without a key using fallback strings |
+| Chrome not launching | Verify Chrome path in `browser_controller.py` line 17 matches your install |
+| `Email stuck in Drafts` | Gmail selector may have changed; update selector lists in `compose_email()` |
+
+---
+
+## Future Enhancements
+
+- Support other email providers (Outlook, Yahoo Mail)
+- Multi-language conversation support
+- Email templates and scheduled sends
+- Session persistence across reconnects
+- Voice command input
+- Docker container for one-command startup
+- Support for attachments
+
+---
+
+## Credits
+
+Built by **Vijayshree Pathak**
+
+- [Microsoft Playwright](https://playwright.dev/) — browser automation framework
+- [OpenAI](https://openai.com/) — language model API
+- [React](https://react.dev/) — frontend framework
+- [websockets](https://websockets.readthedocs.io/) — Python async WebSocket server
+
+---
+
+*"Real agents don't call APIs, they move pixels."*
+
+**Star this repo if you found it useful!**
